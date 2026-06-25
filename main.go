@@ -42,6 +42,8 @@ func main() {
 		protected.DELETE("/:id", handlers.DeleteTask)
 	}
 
+r.Static("/ui", "./static")
+
 	fmt.Println("🚀 Server running on http://localhost:3000")
 	r.Run(":3000")
 }
