@@ -1,64 +1,47 @@
 package main
 
 import (
-    "fmt"
-    "log"
-    "net/http"
+	"fmt"
+	"log"
 
-    "taskapi/db"
-    "taskapi/handlers"
-    "taskapi/models"
+	"github.com/gin-gonic/gin"
+	"taskapi/db"
+	"taskapi/handlers"
+	"taskapi/middleware"
+	"taskapi/models"
 )
 
-func router(w http.ResponseWriter, r *http.Request) {
-    // Route: /tasks or /tasks/{id}
-    switch {
-    case r.URL.Path == "/tasks":
-        switch r.Method {
-        case http.MethodGet:
-            handlers.GetAllTasks(w, r)
-        case http.MethodPost:
-            handlers.CreateTask(w, r)
-        default:
-            http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-        }
-
-    case len(r.URL.Path) > 7 && r.URL.Path[:7] == "/tasks/":
-        switch r.Method {
-        case http.MethodGet:
-            handlers.GetTask(w, r)
-        case http.MethodPut:
-            handlers.UpdateTask(w, r)
-        case http.MethodDelete:
-            handlers.DeleteTask(w, r)
-        default:
-            http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-        }
-
-    default:
-        http.Error(w, "Not found", http.StatusNotFound)
-    }
-}
-
 func main() {
-    // 1. Connect to PostgreSQL
-    db.Connect()
+	db.Connect()
 
-    // 2. Auto-create table if it doesn't exist
-    if err := models.CreateTable(); err != nil {
-        log.Fatalf("❌ Failed to create table: %v", err)
-    }
-    fmt.Println("✅ Table ready!")
+	if err := models.CreateTable(); err != nil {
+		log.Fatalf("❌ Failed to create tasks table: %v", err)
+	}
+	if err := models.CreateUsersTable(); err != nil {
+		log.Fatalf("❌ Failed to create users table: %v", err)
+	}
+	fmt.Println("✅ Tables ready!")
 
-    // 3. Register routes
-    http.HandleFunc("/tasks", router)
-    http.HandleFunc("/tasks/", router)
-    http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-        w.Header().Set("Content-Type", "application/json")
-        w.Write([]byte(`{"status":"ok"}`))
-    })
+	r := gin.Default()
 
-    // 4. Start server
-    fmt.Println("🚀 Server running on http://localhost:8080")
-    log.Fatal(http.ListenAndServe(":8080", nil))
+	// Public routes — no token needed
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+	r.POST("/register", handlers.Register)
+	r.POST("/login", handlers.Login)
+
+	// Protected routes — must have valid JWT
+	protected := r.Group("/tasks")
+	protected.Use(middleware.AuthRequired())
+	{
+		protected.GET("", handlers.GetAllTasks)
+		protected.POST("", handlers.CreateTask)
+		protected.GET("/:id", handlers.GetTask)
+		protected.PUT("/:id", handlers.UpdateTask)
+		protected.DELETE("/:id", handlers.DeleteTask)
+	}
+
+	fmt.Println("🚀 Server running on http://localhost:3000")
+	r.Run(":3000")
 }
